@@ -234,14 +234,28 @@ async function processSubmission(submissionId, lang) {
       };
 
       console.log("Sending submission data to background script", payload);
-      chrome.runtime.sendMessage(payload, (response) => {
-          if (response && response.success) {
-              console.log("Successfully pushed to GitHub!");
-              // Could optionally inject a success message into the UI here
-          } else {
-              console.error("Failed to push to GitHub:", response?.error);
+
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          try {
+              chrome.runtime.sendMessage(payload, (response) => {
+                  if (chrome.runtime.lastError) {
+                      console.error("Extension context invalidated or background script not reachable:", chrome.runtime.lastError.message);
+                      return;
+                  }
+
+                  if (response && response.success) {
+                      console.log("Successfully pushed to GitHub!");
+                      // Could optionally inject a success message into the UI here
+                  } else {
+                      console.error("Failed to push to GitHub:", response?.error);
+                  }
+              });
+          } catch (e) {
+              console.error("Error communicating with background script. Extension context might be invalidated. Please refresh the page.", e);
           }
-      });
+      } else {
+          console.error("chrome.runtime.sendMessage is not available. Extension context may be invalidated. Please refresh the page.");
+      }
   } catch (error) {
       console.error("Error processing submission:", error);
   }
