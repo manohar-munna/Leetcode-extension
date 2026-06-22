@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Auto LeetCode Submitter",
+  "version": "1.0",
+  "description": "Automatically pushes your accepted LeetCode submissions to your GitHub repository and updates your stats graph.",
+  "permissions": [
+    "storage",
+    "webRequest"
+  ],
+  "host_permissions": [
+    "https://leetcode.com/*",
+    "https://api.github.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://leetcode.com/problems/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Configure GitHub Credentials"
+  }
+}
