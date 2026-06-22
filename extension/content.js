@@ -18,9 +18,25 @@ function getProblemSlug() {
 document.addEventListener('click', (e) => {
   // Try to identify submit button clicks.
   // The submit button in modern leetcode often has specific data-e2e locators or specific classes
-  const target = e.target.closest('[data-e2e-locator="console-submit-button"]') ||
-                 e.target.closest('button:contains("Submit")') ||
-                 (e.target.tagName === 'BUTTON' && e.target.textContent.includes('Submit'));
+  let target = null;
+
+  try {
+      target = e.target.closest('[data-e2e-locator="console-submit-button"]');
+  } catch(err) {
+      // safe fallback
+  }
+
+  if (!target && e.target.tagName === 'BUTTON' && e.target.textContent.includes('Submit')) {
+      target = e.target;
+  }
+
+  // Alternative: walk up to find a button if clicked on an icon inside the button
+  if (!target) {
+      const parentBtn = e.target.closest('button');
+      if (parentBtn && parentBtn.textContent.includes('Submit')) {
+          target = parentBtn;
+      }
+  }
 
   if (target) {
     console.log("Submit button clicked!");
