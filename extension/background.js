@@ -94,15 +94,30 @@ async function handleSubmission(data) {
     const repoPath = `/repos/${creds.githubUsername}/${creds.githubRepo}`;
 
     // 1. Get latest commit and tree
-    const ref = await githubAPI(`${repoPath}/git/ref/heads/master`, 'GET', null, creds.githubToken).catch(
-        // fallback to main if master doesn't exist
-        () => githubAPI(`${repoPath}/git/ref/heads/main`, 'GET', null, creds.githubToken)
-    );
-    const branch = ref.ref.replace('refs/heads/', '');
-    const latestCommitSha = ref.object.sha;
+    let ref;
+    let branch = 'main';
+    let latestCommitSha = null;
+    let baseTreeSha = null;
+    let isEmptyRepo = false;
 
-    const latestCommit = await githubAPI(`${repoPath}/git/commits/${latestCommitSha}`, 'GET', null, creds.githubToken);
-    const baseTreeSha = latestCommit.tree.sha;
+    try {
+        ref = await githubAPI(`${repoPath}/git/ref/heads/master`, 'GET', null, creds.githubToken).catch(
+            // fallback to main if master doesn't exist
+            () => githubAPI(`${repoPath}/git/ref/heads/main`, 'GET', null, creds.githubToken)
+        );
+        branch = ref.ref.replace('refs/heads/', '');
+        latestCommitSha = ref.object.sha;
+
+        const latestCommit = await githubAPI(`${repoPath}/git/commits/${latestCommitSha}`, 'GET', null, creds.githubToken);
+        baseTreeSha = latestCommit.tree.sha;
+    } catch (e) {
+        if (e.message.includes('409') && e.message.includes('empty')) {
+            console.log("Empty repository detected. Will initialize with a new commit.");
+            isEmptyRepo = true;
+        } else {
+            throw e;
+        }
+    }
 
     // 2. Get current stats.json (if exists) to update
     let currentStats = {
@@ -110,13 +125,15 @@ async function handleSubmission(data) {
         topicCounts: {} // New field to track topics
     };
 
-    try {
-        const statsFile = await githubAPI(`${repoPath}/contents/stats.json?ref=${branch}`, 'GET', null, creds.githubToken);
-        const statsContent = decodeURIComponent(escape(atob(statsFile.content)));
-        currentStats = JSON.parse(statsContent);
-        if (!currentStats.topicCounts) currentStats.topicCounts = {};
-    } catch (e) {
-        console.log("stats.json not found or parse error, initializing new stats.");
+    if (!isEmptyRepo) {
+        try {
+            const statsFile = await githubAPI(`${repoPath}/contents/stats.json?ref=${branch}`, 'GET', null, creds.githubToken);
+            const statsContent = decodeURIComponent(escape(atob(statsFile.content)));
+            currentStats = JSON.parse(statsContent);
+            if (!currentStats.topicCounts) currentStats.topicCounts = {};
+        } catch (e) {
+            console.log("stats.json not found or parse error, initializing new stats.");
+        }
     }
 
     const diffLevel = data.problem.difficulty.toLowerCase();
@@ -226,23 +243,36 @@ async function handleSubmission(data) {
         }
     ];
 
-    const newTree = await githubAPI(`${repoPath}/git/trees`, 'POST', {
-        base_tree: baseTreeSha,
-        tree: tree
-    }, creds.githubToken);
+    const treePayload = { tree: tree };
+    if (!isEmptyRepo) {
+        treePayload.base_tree = baseTreeSha;
+    }
+
+    const newTree = await githubAPI(`${repoPath}/git/trees`, 'POST', treePayload, creds.githubToken);
 
     // 6. Create commit
     const commitMessage = `Add ${data.problem.title} - ${diffLevel}`;
-    const newCommit = await githubAPI(`${repoPath}/git/commits`, 'POST', {
+    const commitPayload = {
         message: commitMessage,
-        tree: newTree.sha,
-        parents: [latestCommitSha]
-    }, creds.githubToken);
+        tree: newTree.sha
+    };
+    if (!isEmptyRepo) {
+        commitPayload.parents = [latestCommitSha];
+    }
+
+    const newCommit = await githubAPI(`${repoPath}/git/commits`, 'POST', commitPayload, creds.githubToken);
 
     // 7. Update reference
-    await githubAPI(`${repoPath}/git/refs/heads/${branch}`, 'PATCH', {
-        sha: newCommit.sha
-    }, creds.githubToken);
+    if (isEmptyRepo) {
+        await githubAPI(`${repoPath}/git/refs`, 'POST', {
+            ref: `refs/heads/${branch}`,
+            sha: newCommit.sha
+        }, creds.githubToken);
+    } else {
+        await githubAPI(`${repoPath}/git/refs/heads/${branch}`, 'PATCH', {
+            sha: newCommit.sha
+        }, creds.githubToken);
+    }
 
     console.log("Successfully committed new submission!");
 }
