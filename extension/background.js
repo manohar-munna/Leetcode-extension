@@ -181,7 +181,7 @@ async function handleSubmission(data) {
                                  `**Runtime:** ${data.runtime} | **Memory:** ${data.memory}\n`;
 
     // B. Problem Solution Code
-    const lang = data.lang || 'java';
+    const lang = (data.lang || 'java').toLowerCase();
     const fileExt = getFileExtension(lang);
     const solutionFileName = `${folderName}.${fileExt}`;
     const solutionContent = data.code;

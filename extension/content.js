@@ -81,9 +81,10 @@ async function pollForSubmissionSuccess() {
         if (recentSubmissions && recentSubmissions.length > 0) {
            const latest = recentSubmissions[0];
            // Check if it's accepted and recent
+           // Note: latest.lang might be empty, but we can pass it
            if (latest.statusDisplay === "Accepted" && (Date.now()/1000 - latest.timestamp) < 60) {
               console.log("Found recent accepted submission!");
-              await processSubmission(latest.id);
+              await processSubmission(latest.id, latest.lang);
               return;
            }
         }
@@ -211,7 +212,7 @@ async function handleSuccessfulSubmission() {
         if (recentSubmissions && recentSubmissions.length > 0) {
            const latest = recentSubmissions[0];
            if (latest.statusDisplay === "Accepted") {
-               await processSubmission(latest.id);
+               await processSubmission(latest.id, latest.lang);
            }
         }
     } catch(e) {
@@ -279,5 +280,36 @@ async function processSubmission(submissionId, lang) {
 
 // In case the script is loaded on a submission page directly
 if (window.location.pathname.includes('/submissions/')) {
-    // we could handle direct submission viewing, but focusing on problem page for now
+    const pathParts = window.location.pathname.split('/');
+    // Example: /problems/two-sum/submissions/123456789/
+    const submissionIdx = pathParts.indexOf('submissions');
+    if (submissionIdx !== -1 && pathParts.length > submissionIdx + 1) {
+        const submissionId = pathParts[submissionIdx + 1];
+        if (submissionId && !isNaN(parseInt(submissionId))) {
+            console.log("Direct submission page detected. Attempting to process submission:", submissionId);
+            // Verify if it's accepted via the DOM or wait a bit then fetch
+            setTimeout(async () => {
+               try {
+                   // We don't know the lang immediately, but we can fetch details
+                   // Let's get recent submissions to verify it's accepted and find the lang
+                   const currentSlug = getProblemSlug();
+                   const recentSubmissions = await getRecentSubmissions(currentSlug);
+                   const targetSub = recentSubmissions.find(s => s.id === submissionId);
+
+                   if (targetSub && targetSub.statusDisplay === "Accepted") {
+                       console.log("Found accepted submission from direct link!");
+                       await processSubmission(targetSub.id, targetSub.lang);
+                   } else if (!targetSub) {
+                       // Try processing anyway if we couldn't find it in recent list (e.g. pagination)
+                       // but only if DOM shows it's accepted
+                       if (document.body.innerText.includes('Accepted')) {
+                           await processSubmission(submissionId, 'java'); // fallback lang
+                       }
+                   }
+               } catch(e) {
+                   console.error("Error processing direct submission", e);
+               }
+            }, 2000); // Wait for DOM to potentially load
+        }
+    }
 }
